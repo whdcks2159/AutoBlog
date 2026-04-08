@@ -21,6 +21,10 @@ interface BlogResult {
 
 type PipelineStep = "idle" | "uploading" | "analyzing" | "writing" | "posting" | "done" | "error";
 
+const MAX_FILES    = 5;
+const MAX_SIZE_MB  = 20;
+const MAX_SIZE_B   = MAX_SIZE_MB * 1024 * 1024;
+
 const STEPS: { key: PipelineStep; label: string }[] = [
   { key: "uploading",  label: "이미지 업로드 중" },
   { key: "analyzing",  label: "AI 이미지 분석 중" },
@@ -76,24 +80,50 @@ export default function UploadArea() {
   /* ── 파일 추가 ── */
   const processFiles = useCallback((newFiles: File[]) => {
     const images = newFiles.filter((f) => f.type.startsWith("image/"));
-    const previews: PreviewFile[] = images.map((file) => ({
-      id: crypto.randomUUID(),
-      file,
-      url: URL.createObjectURL(file),
-      progress: 0,
-    }));
-    setFiles((prev) => [...prev, ...previews]);
-    setResult(null); setBlogUrl(null); setStep("idle");
 
-    // 미리보기 진행 애니메이션
-    previews.forEach((p) => {
-      let v = 0;
-      const iv = setInterval(() => {
-        v += Math.random() * 25;
-        if (v >= 100) { v = 100; clearInterval(iv); }
-        setFiles((prev) => prev.map((f) => f.id === p.id ? { ...f, progress: v } : f));
-      }, 120);
+    // 용량 초과 파일 제외
+    const oversized = images.filter((f) => f.size > MAX_SIZE_B);
+    if (oversized.length > 0) {
+      setErrorMsg(`파일 크기는 ${MAX_SIZE_MB}MB 이하만 가능해요. (${oversized.map((f) => f.name).join(", ")})`);
+      setStep("error");
+    }
+    const valid = images.filter((f) => f.size <= MAX_SIZE_B);
+    if (valid.length === 0) return;
+
+    setFiles((prev) => {
+      const remaining = MAX_FILES - prev.length;
+      if (remaining <= 0) {
+        setErrorMsg(`사진은 최대 ${MAX_FILES}장까지 업로드할 수 있어요.`);
+        setStep("error");
+        return prev;
+      }
+      const toAdd = valid.slice(0, remaining);
+      if (valid.length > remaining) {
+        setErrorMsg(`최대 ${MAX_FILES}장까지만 가능해서 ${remaining}장만 추가됐어요.`);
+        setStep("error");
+      }
+
+      const previews: PreviewFile[] = toAdd.map((file) => ({
+        id: crypto.randomUUID(),
+        file,
+        url: URL.createObjectURL(file),
+        progress: 0,
+      }));
+
+      // 진행 애니메이션
+      previews.forEach((p) => {
+        let v = 0;
+        const iv = setInterval(() => {
+          v += Math.random() * 25;
+          if (v >= 100) { v = 100; clearInterval(iv); }
+          setFiles((cur) => cur.map((f) => f.id === p.id ? { ...f, progress: v } : f));
+        }, 120);
+      });
+
+      return [...prev, ...previews];
     });
+
+    setResult(null); setBlogUrl(null); setStep("idle");
   }, []);
 
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -171,13 +201,15 @@ export default function UploadArea() {
           </div>
           <div>
             <p className="text-base font-semibold text-gray-700">사진을 드래그하거나 클릭하여 업로드</p>
-            <p className="text-sm text-gray-400 mt-1">JPG, PNG 등 여러 장 동시 업로드 가능</p>
+            <p className="text-sm text-gray-400 mt-1">JPG, PNG · 최대 {MAX_FILES}장 · 장당 {MAX_SIZE_MB}MB 이하</p>
           </div>
         </div>
       </div>
 
       {/* 미리보기 */}
       {files.length > 0 && (
+        <div>
+        <p className="text-xs text-gray-400 mb-2 text-right">{files.length} / {MAX_FILES}장</p>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           {files.map((f) => (
             <div key={f.id} className="relative rounded-xl overflow-hidden border border-gray-100 shadow-sm bg-white">
@@ -201,6 +233,7 @@ export default function UploadArea() {
               <p className="text-xs text-gray-500 truncate px-2 py-1.5">{f.file.name}</p>
             </div>
           ))}
+        </div>
         </div>
       )}
 
