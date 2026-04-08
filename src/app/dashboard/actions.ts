@@ -11,26 +11,26 @@ interface BlogResult {
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
-export async function generateBlog(formData: FormData): Promise<BlogResult> {
+export async function generateBlog(
+  guide: string,
+  imageUrls: string[]
+): Promise<BlogResult> {
   const session = await auth();
   if (!session?.user) throw new Error("로그인이 필요합니다.");
-
-  const guide = (formData.get("guide") as string) ?? "";
-  const imageFiles = formData.getAll("images") as File[];
-
-  if (imageFiles.length === 0) throw new Error("이미지를 업로드해주세요.");
+  if (imageUrls.length === 0) throw new Error("이미지를 업로드해주세요.");
 
   const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
 
-  // 이미지를 base64로 변환
+  // URL에서 이미지를 fetch → base64 변환
   const imageParts = await Promise.all(
-    imageFiles.map(async (file) => {
-      const buffer = await file.arrayBuffer();
-      const base64 = Buffer.from(buffer).toString("base64");
+    imageUrls.map(async (url) => {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`이미지 fetch 실패: ${url}`);
+      const buffer = await res.arrayBuffer();
       return {
         inlineData: {
-          data: base64,
-          mimeType: file.type,
+          data: Buffer.from(buffer).toString("base64"),
+          mimeType: res.headers.get("content-type") ?? "image/jpeg",
         },
       };
     })
@@ -60,8 +60,6 @@ ${guide || "없음 (이미지 내용을 바탕으로 자유롭게 작성해주�
 
   const result = await model.generateContent([prompt, ...imageParts]);
   const text = result.response.text().trim();
-
-  // JSON 파싱 (마크다운 코드블록 제거)
   const jsonText = text.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
 
   try {
