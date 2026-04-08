@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useTransition } from "react";
+import { generateBlog } from "./actions";
 
 interface PreviewFile {
   id: string;
@@ -10,10 +11,19 @@ interface PreviewFile {
   progress: number;
 }
 
+interface BlogResult {
+  title: string;
+  content: string;
+  tags: string[];
+}
+
 export default function UploadArea() {
   const [files, setFiles] = useState<PreviewFile[]>([]);
   const [guide, setGuide] = useState("");
   const [isDragging, setIsDragging] = useState(false);
+  const [result, setResult] = useState<BlogResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const processFiles = useCallback((newFiles: File[]) => {
@@ -30,12 +40,12 @@ export default function UploadArea() {
     }));
 
     setFiles((prev) => [...prev, ...previews]);
+    setResult(null);
 
-    // 업로드 진행 시뮬레이션
     previews.forEach((preview) => {
       let p = 0;
       const interval = setInterval(() => {
-        p += Math.random() * 20;
+        p += Math.random() * 25;
         if (p >= 100) {
           p = 100;
           clearInterval(interval);
@@ -56,13 +66,6 @@ export default function UploadArea() {
     [processFiles]
   );
 
-  const onDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const onDragLeave = () => setIsDragging(false);
-
   const onInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) processFiles(Array.from(e.target.files));
   };
@@ -73,6 +76,29 @@ export default function UploadArea() {
       if (target) URL.revokeObjectURL(target.url);
       return prev.filter((f) => f.id !== id);
     });
+    setResult(null);
+  };
+
+  const handleGenerate = () => {
+    setError(null);
+    const imageFiles = files.filter((f) => f.type === "image");
+    if (imageFiles.length === 0) {
+      setError("이미지 파일이 필요합니다.");
+      return;
+    }
+
+    startTransition(async () => {
+      const formData = new FormData();
+      formData.append("guide", guide);
+      imageFiles.forEach((f) => formData.append("images", f.file));
+
+      try {
+        const data = await generateBlog(formData);
+        setResult(data);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "오류가 발생했습니다.");
+      }
+    });
   };
 
   const allDone = files.length > 0 && files.every((f) => f.progress >= 100);
@@ -82,8 +108,8 @@ export default function UploadArea() {
       {/* 드래그 앤 드롭 영역 */}
       <div
         onDrop={onDrop}
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
+        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+        onDragLeave={() => setIsDragging(false)}
         onClick={() => inputRef.current?.click()}
         className={`
           relative border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all
@@ -127,8 +153,6 @@ export default function UploadArea() {
               ) : (
                 <video src={f.url} className="w-full h-32 object-cover" muted />
               )}
-
-              {/* 진행바 */}
               {f.progress < 100 && (
                 <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-gray-200">
                   <div
@@ -137,24 +161,19 @@ export default function UploadArea() {
                   />
                 </div>
               )}
-
-              {/* 완료 뱃지 */}
               {f.progress >= 100 && (
                 <div className="absolute top-2 left-2 bg-green-500 text-white text-xs font-medium px-2 py-0.5 rounded-full">
                   완료
                 </div>
               )}
-
-              {/* 삭제 버튼 */}
               <button
-                onClick={() => removeFile(f.id)}
+                onClick={(e) => { e.stopPropagation(); removeFile(f.id); }}
                 className="absolute top-2 right-2 w-6 h-6 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center transition-colors"
               >
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
-
               <p className="text-xs text-gray-500 truncate px-2 py-1.5">{f.file.name}</p>
             </div>
           ))}
@@ -176,23 +195,94 @@ export default function UploadArea() {
         <p className="text-xs text-gray-400 text-right">{guide.length}자</p>
       </div>
 
-      {/* 제출 버튼 */}
+      {/* 오류 메시지 */}
+      {error && (
+        <div className="rounded-xl bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-600">
+          {error}
+        </div>
+      )}
+
+      {/* 생성 버튼 */}
       <button
-        disabled={!allDone}
+        onClick={handleGenerate}
+        disabled={!allDone || isPending}
         className={`
           w-full py-3.5 rounded-xl text-white font-semibold text-base transition-all
-          ${allDone
+          ${allDone && !isPending
             ? "bg-green-500 hover:bg-green-600 shadow-md hover:shadow-lg"
             : "bg-gray-200 text-gray-400 cursor-not-allowed"
           }
         `}
       >
-        {files.length === 0
+        {isPending
+          ? "AI가 글을 작성 중이에요..."
+          : files.length === 0
           ? "파일을 먼저 업로드해주세요"
           : allDone
           ? "AI 블로그 글 생성하기"
           : "업로드 중..."}
       </button>
+
+      {/* AI 생성 결과 */}
+      {isPending && (
+        <div className="rounded-2xl border border-green-100 bg-green-50 p-6 text-center space-y-3">
+          <div className="flex justify-center">
+            <div className="w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+          <p className="text-sm text-green-700 font-medium">이미지를 분석하고 블로그 글을 작성하고 있어요</p>
+          <p className="text-xs text-green-500">보통 10~30초 정도 걸려요</p>
+        </div>
+      )}
+
+      {result && !isPending && (
+        <div className="rounded-2xl border border-gray-100 shadow-sm bg-white overflow-hidden">
+          {/* 헤더 */}
+          <div className="bg-green-500 px-6 py-4">
+            <p className="text-xs text-green-100 font-medium mb-1">생성된 블로그 제목</p>
+            <h3 className="text-white font-bold text-lg leading-snug">{result.title}</h3>
+          </div>
+
+          {/* 태그 */}
+          <div className="px-6 py-3 border-b border-gray-100 flex flex-wrap gap-2">
+            {result.tags.map((tag) => (
+              <span
+                key={tag}
+                className="text-xs bg-green-50 text-green-700 font-medium px-2.5 py-1 rounded-full"
+              >
+                #{tag}
+              </span>
+            ))}
+          </div>
+
+          {/* 본문 */}
+          <div className="px-6 py-5">
+            <p className="text-xs font-semibold text-gray-400 mb-3">생성된 본문</p>
+            <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+              {result.content}
+            </div>
+          </div>
+
+          {/* 복사 버튼 */}
+          <div className="px-6 pb-5 flex gap-3">
+            <button
+              onClick={() => navigator.clipboard.writeText(result.content)}
+              className="flex-1 py-2.5 rounded-xl border border-green-500 text-green-600 text-sm font-semibold hover:bg-green-50 transition-colors"
+            >
+              본문 복사
+            </button>
+            <button
+              onClick={() =>
+                navigator.clipboard.writeText(
+                  `제목: ${result.title}\n\n${result.content}\n\n태그: ${result.tags.map((t) => `#${t}`).join(" ")}`
+                )
+              }
+              className="flex-1 py-2.5 rounded-xl bg-green-500 text-white text-sm font-semibold hover:bg-green-600 transition-colors shadow-sm"
+            >
+              전체 복사
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
