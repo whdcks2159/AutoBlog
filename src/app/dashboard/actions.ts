@@ -19,7 +19,7 @@ export async function generateBlog(
   if (!session?.user) throw new Error("로그인이 필요합니다.");
   if (imageUrls.length === 0) throw new Error("이미지를 업로드해주세요.");
 
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
 
   // URL에서 이미지를 fetch → base64 변환
   const imageParts = await Promise.all(
