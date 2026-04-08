@@ -9,7 +9,7 @@ export const authConfig: NextAuthConfig = {
       type: "oauth",
       authorization: {
         url: "https://nid.naver.com/oauth2.0/authorize",
-        params: { scope: "" },
+        params: { scope: "blog" },
       },
       token: "https://nid.naver.com/oauth2.0/token",
       userinfo: "https://openapi.naver.com/v1/nid/me",
