@@ -54,7 +54,7 @@ export async function generateBlog(
     "네이버 블로그 콘텐츠 생성"
   );
 
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
   const imageParts = await urlsToImageParts(imageUrls);
 
   const prompt = `당신은 네이버 블로그 전문 작가입니다. 업로드된 이미지들을 분석하고 아래 지침에 따라 블로그 포스팅을 작성해주세요.
@@ -111,7 +111,7 @@ export async function generateTweet(
     "트위터 콘텐츠 생성"
   );
 
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
   const imageParts = await urlsToImageParts(imageUrls);
 
   const prompt = `당신은 트위터(X) 바이럴 전문 작가입니다. 업로드된 이미지들을 분석해 트윗을 작성해주세요.
@@ -177,7 +177,7 @@ export async function generateReelsConcepts(
   if (!session?.user) throw new Error("로그인이 필요합니다.");
   if (imageUrls.length === 0) throw new Error("이미지를 업로드해주세요.");
 
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
   const imageParts = await urlsToImageParts(imageUrls);
   const platformLabel = platform === "instagram" ? "인스타그램 릴스" : "틱톡";
 
@@ -231,7 +231,7 @@ export async function generateReelsScript(
     `${platform === "instagram" ? "인스타그램" : "틱톡"} 릴스 대본 — ${concept.title}`
   );
 
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
   const imageParts = await urlsToImageParts(imageUrls);
   const platformLabel = platform === "instagram" ? "인스타그램 릴스 (15~30초)" : "틱톡 (15~60초)";
 
