@@ -37,6 +37,23 @@ CREATE TABLE IF NOT EXISTS posts (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 트위터 연동 토큰 테이블 (네이버 로그인 유저가 트위터를 연결할 때 저장)
+CREATE TABLE IF NOT EXISTS twitter_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL UNIQUE,              -- NextAuth userId (session.userId)
+  access_token TEXT NOT NULL,
+  refresh_token TEXT,
+  expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE twitter_tokens ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "service_role_all" ON twitter_tokens FOR ALL USING (true);
+
+CREATE TRIGGER update_twitter_tokens_updated_at BEFORE UPDATE ON twitter_tokens
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
 -- RLS (Row Level Security) 활성화
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE naver_tokens ENABLE ROW LEVEL SECURITY;

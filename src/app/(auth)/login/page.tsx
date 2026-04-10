@@ -27,10 +27,10 @@ export default async function LoginPage() {
         {/* 플랫폼 프리뷰 */}
         <div className="grid grid-cols-2 gap-3">
           {[
-            { icon: "📝", platform: "네이버 블로그", badge: "무료", color: "border-green-500/30 bg-green-500/5" },
-            { icon: "✦",  platform: "트위터 (X)",   badge: "무료", color: "border-slate-500/30 bg-slate-500/5" },
-            { icon: "🎬", platform: "인스타그램 릴스", badge: "프리미엄", color: "border-purple-500/30 bg-purple-500/5" },
-            { icon: "🎵", platform: "틱톡",          badge: "프리미엄", color: "border-pink-500/30 bg-pink-500/5" },
+            { icon: "📝", platform: "네이버 블로그", badge: "자동 게시", color: "border-green-500/30 bg-green-500/5" },
+            { icon: "✦",  platform: "트위터 (X)",   badge: "자동 게시", color: "border-slate-500/30 bg-slate-500/5" },
+            { icon: "📸", platform: "인스타그램",    badge: "캡션 생성", color: "border-purple-500/30 bg-purple-500/5" },
+            { icon: "🎵", platform: "틱톡",          badge: "캡션 생성", color: "border-pink-500/30 bg-pink-500/5" },
           ].map((item) => (
             <div key={item.platform}
               className={`rounded-xl border p-3 flex items-center gap-2.5 ${item.color}`}>
@@ -38,7 +38,7 @@ export default async function LoginPage() {
               <div className="min-w-0">
                 <p className="text-xs font-semibold text-white truncate">{item.platform}</p>
                 <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full
-                  ${item.badge === "무료"
+                  ${item.badge === "자동 게시"
                     ? "bg-green-500/20 text-green-400"
                     : "bg-purple-500/20 text-purple-400"}`}>
                   {item.badge}

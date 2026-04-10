@@ -1,8 +1,7 @@
 import { createServiceClient } from "./supabase";
 
 export const POINT_COSTS = {
-  BASIC_GENERATE: 100,  // 네이버/트위터 생성
-  REELS_SCRIPT: 300,    // 릴스 대본 선택
+  BASIC_GENERATE: 200,  // 네이버/트위터/인스타/틱톡 생성
 } as const;
 
 export async function initializeUserPoints(userId: string): Promise<number> {

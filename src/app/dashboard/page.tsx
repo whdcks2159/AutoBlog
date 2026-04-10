@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { signOut } from "@/lib/auth";
 import { getUserPoints } from "@/lib/points";
 import { checkAdRewardAvailable } from "./adActions";
+import { hasTwitterToken } from "@/lib/twitter-tokens";
 import UploadArea from "./UploadArea";
 import PointStatus from "./PointStatus";
 
@@ -10,9 +11,10 @@ export default async function DashboardPage() {
   const session = await auth();
   if (!session) redirect("/login");
 
-  const [points, adAvailableToday] = await Promise.all([
+  const [points, adAvailableToday, twitterLinked] = await Promise.all([
     session.userId ? getUserPoints(session.userId) : Promise.resolve(0),
     checkAdRewardAvailable(),
+    session.userId ? hasTwitterToken(session.userId) : Promise.resolve(false),
   ]);
 
   return (
@@ -59,6 +61,7 @@ export default async function DashboardPage() {
             provider={session.provider ?? "naver"}
             initialPoints={points}
             adAvailableToday={adAvailableToday}
+            twitterLinked={twitterLinked || session.provider === "twitter"}
           />
         </div>
       </main>

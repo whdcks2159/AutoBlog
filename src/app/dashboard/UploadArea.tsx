@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { generateBlog, generateTweet, generateReelsConcepts, TweetResult, ReelsConcept } from "./actions";
+import { generateBlog, generateTweet, generateCaption, TweetResult, CaptionResult } from "./actions";
 import { postTweet } from "./twitterActions";
-import ReelsSection from "./ReelsSection";
 import AdModal from "./AdModal";
 import Toast from "./Toast";
 import { POINT_COSTS } from "@/lib/points";
@@ -46,12 +46,12 @@ const STEPS: Record<Platform, { key: PipelineStep; label: string }[]> = {
   instagram: [
     { key: "uploading", label: "이미지 업로드 중" },
     { key: "analyzing", label: "AI 이미지 분석 중" },
-    { key: "writing",   label: "릴스 콘셉트 생성 중" },
+    { key: "writing",   label: "캡션 & 해시태그 생성 중" },
   ],
   tiktok: [
     { key: "uploading", label: "이미지 업로드 중" },
     { key: "analyzing", label: "AI 이미지 분석 중" },
-    { key: "writing",   label: "틱톡 콘셉트 생성 중" },
+    { key: "writing",   label: "캡션 & 해시태그 생성 중" },
   ],
 };
 
@@ -93,9 +93,10 @@ interface UploadAreaProps {
   provider: string;
   initialPoints: number;
   adAvailableToday: boolean;
+  twitterLinked: boolean;
 }
 
-export default function UploadArea({ provider, initialPoints, adAvailableToday }: UploadAreaProps) {
+export default function UploadArea({ provider, initialPoints, adAvailableToday, twitterLinked }: UploadAreaProps) {
   const defaultPlatform: Platform = provider === "twitter" ? "twitter" : "naver";
 
   const [platform, setPlatform]       = useState<Platform>(defaultPlatform);
@@ -110,24 +111,40 @@ export default function UploadArea({ provider, initialPoints, adAvailableToday }
   const [showPointsModal, setShowPointsModal] = useState(false);
   const [showAdModal, setShowAdModal] = useState(false);
   const [showToast, setShowToast]     = useState(false);
+  const [toastMessage, setToastMessage] = useState("포인트가 충전되었습니다! 바로 블로그 포스팅을 시작해보세요.");
 
   // 결과
-  const [blogResult, setBlogResult]     = useState<BlogResult | null>(null);
-  const [tweetResult, setTweetResult]   = useState<TweetResult | null>(null);
-  const [resultUrl, setResultUrl]       = useState<string | null>(null);
-  const [reelsConcepts, setReelsConcepts] = useState<[ReelsConcept, ReelsConcept, ReelsConcept] | null>(null);
+  const [blogResult, setBlogResult]       = useState<BlogResult | null>(null);
+  const [tweetResult, setTweetResult]     = useState<TweetResult | null>(null);
+  const [resultUrl, setResultUrl]         = useState<string | null>(null);
+  const [captionResult, setCaptionResult] = useState<CaptionResult | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  useEffect(() => {
+    const linkSuccess = searchParams.get("link_success");
+    const linkError = searchParams.get("link_error");
+    if (linkSuccess === "twitter") {
+      setToastMessage("트위터 계정이 연결되었습니다! 이제 트윗을 바로 게시할 수 있어요.");
+      setShowToast(true);
+      router.replace("/dashboard");
+    } else if (linkError) {
+      setErrorMsg(`트위터 연결 실패: ${linkError}`);
+      setStep("error");
+      router.replace("/dashboard");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /* ── 포인트 비용 계산 ── */
-  const currentCost = (platform === "naver" || platform === "twitter")
-    ? POINT_COSTS.BASIC_GENERATE
-    : 0; // 릴스 콘셉트 자체는 무료, 대본 선택 시 차감
+  const currentCost = POINT_COSTS.BASIC_GENERATE;
 
   /* ── 플랫폼 전환 ── */
   const handlePlatformChange = (p: Platform) => {
     setPlatform(p);
-    setBlogResult(null); setTweetResult(null); setResultUrl(null); setReelsConcepts(null);
+    setBlogResult(null); setTweetResult(null); setResultUrl(null); setCaptionResult(null);
     setStep("idle"); setErrorMsg(null);
   };
 
@@ -167,7 +184,7 @@ export default function UploadArea({ provider, initialPoints, adAvailableToday }
       });
       return [...prev, ...previews];
     });
-    setBlogResult(null); setTweetResult(null); setResultUrl(null); setReelsConcepts(null); setStep("idle");
+    setBlogResult(null); setTweetResult(null); setResultUrl(null); setCaptionResult(null); setStep("idle");
   }, []);
 
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -189,13 +206,13 @@ export default function UploadArea({ provider, initialPoints, adAvailableToday }
     const imageFiles = files.filter((f) => f.file.type.startsWith("image/"));
     if (imageFiles.length === 0) { setErrorMsg("이미지 파일이 필요합니다."); setStep("error"); return; }
 
-    // Basic 플랫폼 포인트 사전 체크 (UX용 — 실제 검증은 서버에서)
-    if ((platform === "naver" || platform === "twitter") && points < POINT_COSTS.BASIC_GENERATE) {
+    // 포인트 사전 체크 (UX용 — 실제 검증은 서버에서)
+    if (points < POINT_COSTS.BASIC_GENERATE) {
       setShowPointsModal(true);
       return;
     }
 
-    setErrorMsg(null); setBlogResult(null); setTweetResult(null); setResultUrl(null); setReelsConcepts(null);
+    setErrorMsg(null); setBlogResult(null); setTweetResult(null); setResultUrl(null); setCaptionResult(null);
 
     try {
       // ① 업로드
@@ -228,9 +245,11 @@ export default function UploadArea({ provider, initialPoints, adAvailableToday }
         setResultUrl(postRes.tweetUrl ?? "https://twitter.com");
 
       } else {
+        const { caption, remainingPoints } = await generateCaption(guide, imageUrls, platform as "instagram" | "tiktok");
+        setPoints(remainingPoints);
         setStep("writing");
-        const { concepts } = await generateReelsConcepts(guide, imageUrls, platform);
-        setReelsConcepts(concepts);
+        await new Promise((r) => setTimeout(r, 400));
+        setCaptionResult(caption);
       }
 
       setStep("done");
@@ -247,7 +266,7 @@ export default function UploadArea({ provider, initialPoints, adAvailableToday }
 
   const reset = () => {
     setFiles([]); setGuide(""); setBlogResult(null); setTweetResult(null);
-    setResultUrl(null); setReelsConcepts(null); setUploadedUrls([]);
+    setResultUrl(null); setCaptionResult(null); setUploadedUrls([]);
     setStep("idle"); setErrorMsg(null);
   };
 
@@ -255,7 +274,7 @@ export default function UploadArea({ provider, initialPoints, adAvailableToday }
   const isRunning   = ["uploading", "analyzing", "writing", "posting"].includes(step);
   const currentIdx  = STEPS[platform].findIndex((s) => s.key === step);
   const isNaverLinked   = provider === "naver";
-  const isTwitterLinked = provider === "twitter";
+  const isTwitterLinked = twitterLinked;
 
   /* ── 버튼 상태 ── */
   const notLinked = (platform === "naver" && !isNaverLinked) || (platform === "twitter" && !isTwitterLinked);
@@ -274,11 +293,11 @@ export default function UploadArea({ provider, initialPoints, adAvailableToday }
     if (notLinked) return `${platform === "naver" ? "네이버" : "트위터"} 로그인 후 사용 가능`;
     if (files.length === 0) return "파일을 먼저 업로드해주세요";
     if (!allUploaded) return "준비 중...";
-    const cost = currentCost > 0 ? ` (${currentCost}P)` : "";
+    const cost = ` (${currentCost}P)`;
     if (platform === "naver")     return `블로그 글 생성하기${cost}`;
     if (platform === "twitter")   return `트윗 생성 및 게시${cost}`;
-    if (platform === "instagram") return "릴스 콘셉트 3가지 분석 (무료)";
-    return "틱톡 콘셉트 3가지 분석 (무료)";
+    if (platform === "instagram") return `인스타 캡션 + 해시태그 생성${cost}`;
+    return `틱톡 캡션 + 해시태그 생성${cost}`;
   };
 
   return (
@@ -297,7 +316,7 @@ export default function UploadArea({ provider, initialPoints, adAvailableToday }
       {/* 플랫폼 탭 */}
       <div className="space-y-2">
         <div>
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1 mb-1.5">Basic — 100P</p>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1 mb-1.5">자동 게시 — 200P</p>
           <div className="flex gap-2 p-1 bg-gray-100 rounded-xl">
             {(["naver", "twitter"] as Platform[]).map((p) => (
               <button key={p} onClick={() => handlePlatformChange(p)}
@@ -323,7 +342,7 @@ export default function UploadArea({ provider, initialPoints, adAvailableToday }
 
         <div>
           <p className="text-[10px] font-bold text-purple-400 uppercase tracking-wider px-1 mb-1.5">
-            Premium — 대본 선택 300P
+            캡션 + 해시태그 생성 — 200P
           </p>
           <div className="flex gap-2 p-1 bg-purple-50 rounded-xl border border-purple-100">
             {(["instagram", "tiktok"] as Platform[]).map((p) => (
@@ -339,9 +358,23 @@ export default function UploadArea({ provider, initialPoints, adAvailableToday }
       </div>
 
       {/* 비연동 안내 */}
-      {notLinked && (
+      {notLinked && platform === "twitter" && (
+        <div className="rounded-xl bg-gray-50 border border-gray-200 px-5 py-4 space-y-3 text-center">
+          <p className="text-sm text-gray-600 font-medium">트위터 계정을 연결하면 바로 게시할 수 있어요</p>
+          <a
+            href="/api/link/twitter"
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-black hover:bg-gray-800 text-white text-sm font-semibold transition-colors shadow-sm"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.747l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+            </svg>
+            트위터 연결하기
+          </a>
+        </div>
+      )}
+      {notLinked && platform === "naver" && (
         <div className="rounded-xl bg-amber-50 border border-amber-200 px-5 py-3 text-sm text-amber-700 text-center">
-          {platform === "naver" ? "네이버" : "트위터"} 계정으로 로그인하면 사용할 수 있어요.
+          네이버 계정으로 로그인하면 사용할 수 있어요.
         </div>
       )}
 
@@ -567,19 +600,69 @@ export default function UploadArea({ provider, initialPoints, adAvailableToday }
         </div>
       )}
 
-      {/* 결과: 릴스 콘셉트 */}
-      {step === "done" && reelsConcepts && (platform === "instagram" || platform === "tiktok") && (
-        <ReelsSection
-          concepts={reelsConcepts}
-          guide={guide}
-          imageUrls={uploadedUrls}
-          platform={platform}
-          points={points}
-          onPointsChange={setPoints}
-          adAvailable={adAvailable}
-          onAdClaimed={(newPoints) => { setPoints(newPoints); setAdAvailable(false); setShowToast(true); }}
-          onReset={reset}
-        />
+      {/* 결과: 인스타/틱톡 캡션 */}
+      {step === "done" && captionResult && (platform === "instagram" || platform === "tiktok") && (
+        <div className="rounded-2xl border border-gray-100 shadow-sm bg-white overflow-hidden">
+          <div className={`px-6 py-5 flex items-center gap-3 ${platform === "instagram" ? "bg-gradient-to-r from-purple-500 to-pink-500" : "bg-black"}`}>
+            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+            </svg>
+            <p className="text-white/90 text-xs font-medium">
+              {platform === "instagram" ? "인스타그램" : "틱톡"} 캡션 생성 완료
+            </p>
+          </div>
+
+          <div className="px-6 py-5 space-y-5">
+            {/* 캡션 */}
+            <div>
+              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">캡션</p>
+              <div className="bg-gray-50 rounded-xl px-4 py-3 text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+                {captionResult.caption}
+              </div>
+            </div>
+
+            {/* 해시태그 */}
+            <div>
+              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">
+                해시태그 ({captionResult.hashtags.length}개)
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {captionResult.hashtags.map((tag) => (
+                  <span key={tag} className="text-xs bg-purple-50 text-purple-700 font-medium px-2.5 py-1 rounded-full">
+                    #{tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="px-6 pb-6 space-y-3">
+            <div className="flex gap-3">
+              <button
+                onClick={() => navigator.clipboard.writeText(captionResult.caption)}
+                className="flex-1 py-2.5 rounded-xl border border-purple-300 text-purple-600 text-sm font-semibold hover:bg-purple-50 transition-colors"
+              >
+                캡션 복사
+              </button>
+              <button
+                onClick={() => navigator.clipboard.writeText(captionResult.hashtags.map((t) => `#${t}`).join(" "))}
+                className="flex-1 py-2.5 rounded-xl border border-purple-300 text-purple-600 text-sm font-semibold hover:bg-purple-50 transition-colors"
+              >
+                해시태그 복사
+              </button>
+            </div>
+            <button
+              onClick={() => navigator.clipboard.writeText(`${captionResult.caption}\n\n${captionResult.hashtags.map((t) => `#${t}`).join(" ")}`)}
+              className={`w-full py-3 rounded-xl text-white font-bold text-sm transition-colors shadow-sm
+                ${platform === "instagram" ? "bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 shadow-purple-200" : "bg-black hover:bg-gray-900"}`}
+            >
+              전체 복사
+            </button>
+            <button onClick={reset} className="w-full py-2 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+              새 글 만들기
+            </button>
+          </div>
+        </div>
       )}
 
       {/* 포인트 부족 모달 */}
@@ -648,7 +731,7 @@ export default function UploadArea({ provider, initialPoints, adAvailableToday }
 
       {/* 충전 완료 토스트 */}
       <Toast
-        message="포인트가 충전되었습니다! 바로 블로그 포스팅을 시작해보세요."
+        message={toastMessage}
         visible={showToast}
         onHide={() => setShowToast(false)}
       />

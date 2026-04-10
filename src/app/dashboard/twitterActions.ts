@@ -1,6 +1,7 @@
 "use server";
 
 import { auth } from "@/lib/auth";
+import { getTwitterToken } from "@/lib/twitter-tokens";
 
 interface PostResult {
   success: boolean;
@@ -10,11 +11,13 @@ interface PostResult {
 
 export async function postTweet(text: string): Promise<PostResult> {
   const session = await auth();
-  if (!session?.user) return { success: false, error: "로그인이 필요합니다." };
+  if (!session?.user || !session.userId) return { success: false, error: "로그인이 필요합니다." };
 
-  const accessToken = session.twitterAccessToken;
+  // DB에서 연동된 Twitter 토큰 조회 (provider 무관)
+  const tokenRow = await getTwitterToken(session.userId);
+  const accessToken = tokenRow?.access_token ?? session.twitterAccessToken;
   if (!accessToken)
-    return { success: false, error: "트위터 액세스 토큰이 없습니다. 트위터 계정으로 다시 로그인해주세요." };
+    return { success: false, error: "트위터 계정이 연동되어 있지 않습니다. 대시보드에서 트위터를 연결해주세요." };
 
   try {
     const response = await fetch("https://api.twitter.com/2/tweets", {

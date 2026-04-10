@@ -12,6 +12,28 @@ interface BlogResult {
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
+const MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"] as const;
+
+async function generateWithFallback(
+  parts: Parameters<ReturnType<typeof genAI.getGenerativeModel>["generateContent"]>[0]
+): Promise<Awaited<ReturnType<ReturnType<typeof genAI.getGenerativeModel>["generateContent"]>>> {
+  let lastError: unknown;
+  for (const modelName of MODELS) {
+    try {
+      const model = genAI.getGenerativeModel({ model: modelName });
+      return await model.generateContent(parts);
+    } catch (err) {
+      const status = (err as { status?: number }).status;
+      if (status === 503 || status === 429) {
+        lastError = err;
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
+}
+
 /** URL 배열 → Gemini inlineData 파트 변환 */
 async function urlsToImageParts(imageUrls: string[]) {
   return Promise.all(
@@ -54,7 +76,6 @@ export async function generateBlog(
     "네이버 블로그 콘텐츠 생성"
   );
 
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
   const imageParts = await urlsToImageParts(imageUrls);
 
   const prompt = `당신은 네이버 블로그 전문 작가입니다. 업로드된 이미지들을 분석하고 아래 지침에 따라 블로그 포스팅을 작성해주세요.
@@ -77,7 +98,7 @@ ${guide || "없음 (이미지 내용을 바탕으로 자유롭게 작성해주�
   "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"]
 }`;
 
-  const result = await model.generateContent([...imageParts, prompt]);
+  const result = await generateWithFallback([...imageParts, prompt]);
   try {
     const blog = parseJson<BlogResult>(result.response.text());
     return { blog, remainingPoints };
@@ -111,7 +132,6 @@ export async function generateTweet(
     "트위터 콘텐츠 생성"
   );
 
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
   const imageParts = await urlsToImageParts(imageUrls);
 
   const prompt = `당신은 트위터(X) 바이럴 전문 작가입니다. 업로드된 이미지들을 분석해 트윗을 작성해주세요.
@@ -132,7 +152,7 @@ ${guide || "없음 (이미지 내용을 바탕으로 자유롭게 작성해주�
   "text": "트윗 본문 (해시태그 포함, 280자 이하)"
 }`;
 
-  const result = await model.generateContent([...imageParts, prompt]);
+  const result = await generateWithFallback([...imageParts, prompt]);
   try {
     const tweet = parseJson<TweetResult>(result.response.text());
     return { tweet, remainingPoints };
@@ -141,131 +161,57 @@ ${guide || "없음 (이미지 내용을 바탕으로 자유롭게 작성해주�
   }
 }
 
-/* ── 릴스 / 숏폼 ── */
+/* ── 인스타그램 / 틱톡 캡션 ── */
 
-export interface ReelsConcept {
-  type: "감성 스토리형" | "정보성 꿀팁형" | "병맛 유머형";
-  title: string;
-  description: string;
-  bgm: string;
+export interface CaptionResult {
+  caption: string;
+  hashtags: string[];
 }
 
-export interface ReelsConceptsResult {
-  concepts: [ReelsConcept, ReelsConcept, ReelsConcept];
-}
-
-export interface ReelsScript {
-  hook: string;
-  scenes: string[];
-  editingPoints: string[];
-  memeCaption: string;
-  cta: string;
-}
-
-export interface ReelsScriptResult {
-  script: ReelsScript;
+export interface CaptionGenerateResult {
+  caption: CaptionResult;
   remainingPoints: number;
 }
 
-// 콘셉트 3가지 생성 — 무료
-export async function generateReelsConcepts(
+export async function generateCaption(
   guide: string,
   imageUrls: string[],
   platform: "instagram" | "tiktok"
-): Promise<ReelsConceptsResult> {
-  const session = await auth();
-  if (!session?.user) throw new Error("로그인이 필요합니다.");
-  if (imageUrls.length === 0) throw new Error("이미지를 업로드해주세요.");
-
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-  const imageParts = await urlsToImageParts(imageUrls);
-  const platformLabel = platform === "instagram" ? "인스타그램 릴스" : "틱톡";
-
-  const prompt = `당신은 ${platformLabel} 전문 숏폼 크리에이터입니다. 업로드된 이미지들을 분석해 3가지 영상 콘셉트를 제안해주세요.
-
-[사용자 가이드]
-${guide || "없음 (이미지 내용을 바탕으로 자유롭게 제안해주세요)"}
-
-[3가지 콘셉트 유형 — 반드시 아래 순서대로]
-1. 감성 스토리형: 따뜻하고 공감 가는 감성 스토리
-2. 정보성 꿀팁형: 실용적이고 유익한 정보 전달
-3. 병맛 유머형: 위트 있고 웃긴 B급 유머 감성
-
-[작성 지침]
-- title: 영상의 핵심 훅이 담긴 한 문장 (30자 이내)
-- description: 영상의 전체 흐름과 분위기 2~3문장
-- bgm: 분위기에 맞는 음악 스타일 (예: "잔잔한 어쿠스틱 팝")
-- 실제 이미지 내용에 기반한 구체적인 제안
-
-반드시 아래 JSON 형식으로만 응답하세요:
-{
-  "concepts": [
-    { "type": "감성 스토리형", "title": "...", "description": "...", "bgm": "..." },
-    { "type": "정보성 꿀팁형", "title": "...", "description": "...", "bgm": "..." },
-    { "type": "병맛 유머형",   "title": "...", "description": "...", "bgm": "..." }
-  ]
-}`;
-
-  const result = await model.generateContent([...imageParts, prompt]);
-  try {
-    return parseJson<ReelsConceptsResult>(result.response.text());
-  } catch {
-    throw new Error("AI 응답 파싱 실패. 다시 시도해주세요.");
-  }
-}
-
-// 상세 대본 생성 — 300포인트 차감
-export async function generateReelsScript(
-  concept: ReelsConcept,
-  guide: string,
-  imageUrls: string[],
-  platform: "instagram" | "tiktok"
-): Promise<ReelsScriptResult> {
+): Promise<CaptionGenerateResult> {
   const session = await auth();
   if (!session?.user || !session.userId) throw new Error("로그인이 필요합니다.");
+  if (imageUrls.length === 0) throw new Error("이미지를 업로드해주세요.");
 
-  // 포인트 차감 (잔액 부족 시 INSUFFICIENT_POINTS throw)
   const remainingPoints = await deductPoints(
     session.userId,
-    POINT_COSTS.REELS_SCRIPT,
-    `${platform === "instagram" ? "인스타그램" : "틱톡"} 릴스 대본 — ${concept.title}`
+    POINT_COSTS.BASIC_GENERATE,
+    `${platform === "instagram" ? "인스타그램" : "틱톡"} 캡션 생성`
   );
 
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
   const imageParts = await urlsToImageParts(imageUrls);
-  const platformLabel = platform === "instagram" ? "인스타그램 릴스 (15~30초)" : "틱톡 (15~60초)";
+  const isInstagram = platform === "instagram";
 
-  const prompt = `당신은 ${platformLabel} 전문 숏폼 대본 작가입니다.
-
-[선택된 콘셉트]
-유형: ${concept.type}
-제목: ${concept.title}
-설명: ${concept.description}
-BGM: ${concept.bgm}
+  const prompt = `당신은 ${isInstagram ? "인스타그램" : "틱톡"} 전문 SNS 마케터입니다. 업로드된 이미지들을 분석해 최적화된 캡션과 해시태그를 작성해주세요.
 
 [사용자 가이드]
-${guide || "없음"}
+${guide || "없음 (이미지 내용을 바탕으로 자유롭게 작성해주세요)"}
 
 [작성 지침]
-- hook: 첫 3초를 사로잡을 강력한 오프닝 멘트 (1문장)
-- scenes: 장면별 대본 3~5개
-- editingPoints: 편집 포인트 3~5개 (컷 타이밍, 효과, 자막 위치 등)
-- memeCaption: 밈 감성 자막 1개 (짧고 임팩트 있게)
-- cta: 마무리 Call-to-Action
+- caption: ${isInstagram ? "인스타그램 감성에 맞는 캡션 (150자 이내, 줄바꿈 활용, 이모지 적극 사용)" : "틱톡 트렌디한 말투로 짧고 임팩트 있게 (100자 이내, 이모지 활용)"}
+- hashtags: ${isInstagram ? "인기 + 틈새 해시태그 조합 25~30개" : "트렌딩 + 관련 해시태그 15~20개"} (# 기호 제외, 단어만)
+- 실제 이미지 내용에 기반한 구체적인 캡션
+- 한국어와 영어 해시태그 혼합
 
 반드시 아래 JSON 형식으로만 응답하세요:
 {
-  "hook": "...",
-  "scenes": ["장면1: ...", "장면2: ...", "장면3: ..."],
-  "editingPoints": ["...", "...", "..."],
-  "memeCaption": "...",
-  "cta": "..."
+  "caption": "...",
+  "hashtags": ["태그1", "태그2", ...]
 }`;
 
-  const result = await model.generateContent([...imageParts, prompt]);
+  const result = await generateWithFallback([...imageParts, prompt]);
   try {
-    const script = parseJson<ReelsScript>(result.response.text());
-    return { script, remainingPoints };
+    const caption = parseJson<CaptionResult>(result.response.text());
+    return { caption, remainingPoints };
   } catch {
     throw new Error("AI 응답 파싱 실패. 다시 시도해주세요.");
   }
