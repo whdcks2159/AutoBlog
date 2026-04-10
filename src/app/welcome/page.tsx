@@ -2,8 +2,10 @@ import { auth, signOut } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { createServiceClient } from "@/lib/supabase";
 
-async function completeOnboarding(userId: string) {
+async function completeOnboarding(formData: FormData) {
   "use server";
+  const userId = formData.get("userId") as string;
+  if (!userId) redirect("/dashboard");
   const supabase = createServiceClient();
   await supabase
     .from("users")
@@ -65,7 +67,8 @@ export default async function WelcomePage() {
         </div>
 
         {/* 시작하기 버튼 */}
-        <form action={completeOnboarding.bind(null, userId)}>
+        <form action={completeOnboarding}>
+          <input type="hidden" name="userId" value={userId} />
           <button
             type="submit"
             className="w-full py-4 rounded-2xl bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-400 hover:to-emerald-400 text-white font-black text-base transition-all shadow-lg shadow-green-900/40 active:scale-[0.98]"
