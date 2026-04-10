@@ -7,10 +7,11 @@ async function completeOnboarding(formData: FormData) {
   const userId = formData.get("userId") as string;
   if (!userId) redirect("/dashboard");
   const supabase = createServiceClient();
-  await supabase
-    .from("users")
-    .update({ onboarded: true })
-    .eq("naver_id", userId);
+  // upsert로 없으면 만들고, 있으면 onboarded 업데이트
+  await supabase.from("users").upsert(
+    { naver_id: userId, onboarded: true },
+    { onConflict: "naver_id" }
+  );
   redirect("/dashboard");
 }
 

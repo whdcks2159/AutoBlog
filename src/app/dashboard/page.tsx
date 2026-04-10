@@ -10,12 +10,14 @@ import PointStatus from "./PointStatus";
 
 async function isOnboarded(userId: string): Promise<boolean> {
   const supabase = createServiceClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("users")
     .select("onboarded")
     .eq("naver_id", userId)
     .single();
-  return data?.onboarded ?? false;
+  // 유저 레코드가 없거나 오류면 막지 않음
+  if (error || !data) return true;
+  return data.onboarded ?? false;
 }
 
 export default async function DashboardPage() {
