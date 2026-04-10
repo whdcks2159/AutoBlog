@@ -4,12 +4,27 @@ import { signOut } from "@/lib/auth";
 import { getUserPoints } from "@/lib/points";
 import { checkAdRewardAvailable } from "./adActions";
 import { hasTwitterToken } from "@/lib/twitter-tokens";
+import { createServiceClient } from "@/lib/supabase";
 import UploadArea from "./UploadArea";
 import PointStatus from "./PointStatus";
+
+async function isOnboarded(userId: string): Promise<boolean> {
+  const supabase = createServiceClient();
+  const { data } = await supabase
+    .from("users")
+    .select("onboarded")
+    .eq("naver_id", userId)
+    .single();
+  return data?.onboarded ?? false;
+}
 
 export default async function DashboardPage() {
   const session = await auth();
   if (!session) redirect("/login");
+
+  if (session.userId && !(await isOnboarded(session.userId))) {
+    redirect("/welcome");
+  }
 
   const [points, adAvailableToday, twitterLinked] = await Promise.all([
     session.userId ? getUserPoints(session.userId) : Promise.resolve(0),

@@ -2,6 +2,26 @@ import NextAuth from "next-auth";
 import type { NextAuthConfig } from "next-auth";
 import Twitter from "next-auth/providers/twitter";
 import { initializeUserPoints } from "./points";
+import { createServiceClient } from "./supabase";
+
+async function saveNaverUser(user: {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  image?: string | null;
+}): Promise<void> {
+  const supabase = createServiceClient();
+  await supabase.from("users").upsert(
+    {
+      naver_id: user.id,
+      name: user.name ?? null,
+      email: user.email ?? null,
+      image: user.image ?? null,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "naver_id", ignoreDuplicates: false }
+  );
+}
 
 export const authConfig: NextAuthConfig = {
   providers: [
@@ -67,14 +87,15 @@ export const authConfig: NextAuthConfig = {
     },
   },
   events: {
-    // 로그인마다 포인트 레코드 초기화 (신규 유저면 500포인트 지급, 기존 유저면 무시)
-    async signIn({ user }) {
-      if (user.id) {
-        try {
-          await initializeUserPoints(user.id);
-        } catch {
-          // 포인트 초기화 실패해도 로그인은 정상 진행
+    async signIn({ user, account }) {
+      if (!user.id) return;
+      try {
+        if (account?.provider === "naver" && user.id) {
+          await saveNaverUser({ ...user, id: user.id });
         }
+        await initializeUserPoints(user.id);
+      } catch {
+        // 실패해도 로그인은 정상 진행
       }
     },
   },
